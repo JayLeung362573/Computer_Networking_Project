@@ -1,180 +1,305 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Timer, Trophy, Star, Zap, SunSnow as Snow, Shield, Ghost } from 'lucide-react';
+import { Timer, Trophy, Star, Zap, SunSnow as Snow } from 'lucide-react';
 import {
   Player, SharedObject, GameState, Obstacle, Powerup,
   CANVAS_SIZE, PLAYER_SIZE, OBJECT_SIZE, POWERUP_SIZE,
   GAME_DURATION, BASE_SPEED, SPEED_BOOST, SPEED_PENALTY,
-  FREEZE_DURATION, INVINCIBLE_DURATION
 } from './types';
 
-const NUM_OBSTACLES = 6;
+const NUM_OBSTACLES = 18;
 const NUM_POWERUPS = 4;
 
-function generateObstacles(): Obstacle[] {
-  const types: ('wall' | 'mud' | 'ice')[] = ['wall', 'mud', 'ice'];
-  return Array(NUM_OBSTACLES).fill(null).map(() => ({
-    x: Math.random() * (CANVAS_SIZE - PLAYER_SIZE * 2),
-    y: Math.random() * (CANVAS_SIZE - PLAYER_SIZE * 2),
-    size: PLAYER_SIZE * 2,
-    type: types[Math.floor(Math.random() * types.length)]
-  }));
+function generateObstacles(players: Player[], sharedObject: SharedObject): Obstacle[] {
+  const type: 'ice' = 'ice';
+  const obstacles: Obstacle[] = [];
+
+  while (obstacles.length < NUM_OBSTACLES) {
+    const newObstacle: Obstacle = {
+      x: Math.random() * (CANVAS_SIZE - PLAYER_SIZE * 4),
+      y: Math.random() * (CANVAS_SIZE - PLAYER_SIZE * 4),
+      size: PLAYER_SIZE * 2,
+      type: type
+    };
+
+    // Check for overlaps
+    const isOverlapping = obstacles.some(obstacle => {
+      const dx = obstacle.x - newObstacle.x;
+      const dy = obstacle.y - newObstacle.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      return distance < PLAYER_SIZE * 2.5; // Ensure they don't overlap
+    })|| players.some(player => {
+      const dx = player.x - newObstacle.x;
+      const dy = player.y - newObstacle.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      return distance < PLAYER_SIZE * 4; // Ensure no overlap with players
+    })|| Math.sqrt((sharedObject.x - newObstacle.x) ** 2 + (sharedObject.y - newObstacle.y) ** 2) < OBJECT_SIZE*3;
+
+    if (!isOverlapping) {
+      obstacles.push(newObstacle);
+    }
+  }
+  
+  return obstacles;
 }
 
-function generatePowerups(): Powerup[] {
-  const types: ('speed' | 'slow' | 'freeze' | 'invincible')[] = ['speed', 'slow', 'freeze', 'invincible'];
-  return Array(NUM_POWERUPS).fill(null).map(() => ({
-    x: Math.random() * (CANVAS_SIZE - POWERUP_SIZE),
-    y: Math.random() * (CANVAS_SIZE - POWERUP_SIZE),
-    type: types[Math.floor(Math.random() * types.length)],
-    active: true
-  }));
+
+function isOverlapping(x: number, y: number, size: number, obstacles:Obstacle[]): boolean {
+  return obstacles.some(obstacle =>
+    x < obstacle.x + obstacle.size &&
+    x + size > obstacle.x &&
+    y < obstacle.y + obstacle.size &&
+    y + size > obstacle.y
+  );
+}
+function isPowerupOvelapWithEachOther(x: number, y: number, powerups: Powerup[], sharedObject:SharedObject): boolean {
+  // return Math.sqrt((sharedObject.x - x) ** 2 + (sharedObject.y - y) ** 2) < OBJECT_SIZE * 5;
+  const isSharedObjectOverlap = Math.sqrt((sharedObject.x - x) ** 2 + (sharedObject.y - y) ** 2) < OBJECT_SIZE * 5;
+
+  // Check for overlaps with each existing powerup
+  const isPowerupOverlap = powerups.some((powerup) => {
+    const distance = Math.sqrt((powerup.x - x) ** 2 + (powerup.y - y) ** 2);
+    return distance < 30*5;
+  });
+
+  // If either overlap is true, return true
+  return isSharedObjectOverlap || isPowerupOverlap;
 }
 
+function generatePowerups(obstacles: Obstacle[], players: Player[], sharedObject: SharedObject): Powerup[] {
+  const types: ('speed' | 'slow')[] = ['speed', 'slow'];
+  const powerups: Powerup[] = [];
+
+  // Calculate the number of powerups to generate (must be an even number)
+  const numSpeedAndSlow = Math.floor(NUM_POWERUPS / 2);
+
+  // Generate 'speed' powerups
+  while (powerups.filter(p => p.type === 'speed').length < numSpeedAndSlow) {
+    const obstacle = obstacles[Math.floor(Math.random() * obstacles.length)];
+    const x = Math.random() * (obstacle.x + obstacle.size);
+    const y = Math.random() * (obstacle.y + obstacle.size);
+
+    // Ensure powerups are not overlapping with players
+    const isOverlappingWithPlayer = players.some(player => {
+      const dx = player.x - x;
+      const dy = player.y - y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      return distance < PLAYER_SIZE * 7; // Ensure powerups are not too close to players
+    });
+
+    if (!isOverlappingWithPlayer && !isOverlapping(x, y, POWERUP_SIZE, obstacles) && !isPowerupOvelapWithEachOther(x, y,powerups,sharedObject)) {
+      powerups.push({
+        x,
+        y,
+        type: 'speed',
+        active: true
+      });
+    }
+  }
+
+  // Generate 'slow' powerups
+  while (powerups.filter(p => p.type === 'slow').length < numSpeedAndSlow) {
+    const obstacle = obstacles[Math.floor(Math.random() * obstacles.length)];
+    const x = Math.random() * (obstacle.x + obstacle.size);
+    const y = Math.random() * (obstacle.y + obstacle.size);
+
+    // Ensure powerups are not overlapping with players
+    const isOverlappingWithPlayer = players.some(player => {
+      const dx = player.x - x;
+      const dy = player.y - y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      return distance < PLAYER_SIZE * 3; // Ensure powerups are not too close to players
+    });
+
+    if (!isOverlappingWithPlayer && !isOverlapping(x, y, POWERUP_SIZE, obstacles) && !isPowerupOvelapWithEachOther(x, y,powerups,sharedObject)) {
+      powerups.push({
+        x,
+        y,
+        type: 'slow',
+        active: true
+      });
+    }
+  }
+
+  return powerups;
+}
+
+const sharedObject = {
+  x: CANVAS_SIZE / 2 - OBJECT_SIZE / 2,
+  y: CANVAS_SIZE / 2 - OBJECT_SIZE / 2,
+  isHeld: false,
+  holderId: null
+}
+const players = [
+  {
+    id: 1,
+    x: 10,
+    y: 10,
+    speed: BASE_SPEED,
+    score: 0,
+    color: 'red',
+    hasObject: false,
+    powerups: { speedBoost: 0, speedPenalty: 0}
+  },
+  {
+    id: 2,
+    x: CANVAS_SIZE - PLAYER_SIZE - 10,
+    y: CANVAS_SIZE - PLAYER_SIZE -10 ,
+    speed: BASE_SPEED,
+    score: 0,
+    color: 'purple',
+    hasObject: false,
+    powerups: { speedBoost: 0, speedPenalty: 0}
+  },{
+    id: 3,
+    x: 10,
+    y: CANVAS_SIZE-PLAYER_SIZE -10 ,
+    speed: BASE_SPEED,
+    score: 0,
+    color: 'blue',
+    hasObject: false,
+    powerups: { speedBoost: 0, speedPenalty: 0}
+  },
+  {
+    id: 4,
+    x: CANVAS_SIZE - PLAYER_SIZE -10,
+    y: 10,
+    speed: BASE_SPEED,
+    score: 0,
+    color: 'green',
+    hasObject: false,
+    powerups: { speedBoost: 0, speedPenalty: 0}
+  }
+]
+const obstacles = generateObstacles(players, sharedObject); 
 function App() {
   const [gameState, setGameState] = useState<GameState>({
-    players: [
-      {
-        id: 1,
-        x: 50,
-        y: 50,
-        speed: BASE_SPEED,
-        score: 0,
-        color: '#FF6B6B',
-        hasObject: false,
-        powerups: { speedBoost: 0, speedPenalty: 0, freezeTimer: 0, invincibility: 0 }
-      },
-      {
-        id: 2,
-        x: CANVAS_SIZE - 80,
-        y: CANVAS_SIZE - 80,
-        speed: BASE_SPEED,
-        score: 0,
-        color: '#4ECDC4',
-        hasObject: false,
-        powerups: { speedBoost: 0, speedPenalty: 0, freezeTimer: 0, invincibility: 0 }
-      }
-    ],
-    sharedObject: {
-      x: CANVAS_SIZE / 2 - OBJECT_SIZE / 2,
-      y: CANVAS_SIZE / 2 - OBJECT_SIZE / 2,
-      isHeld: false,
-      holderId: null
-    },
-    obstacles: generateObstacles(),
-    powerups: generatePowerups(),
+    players: players,
+    sharedObject: sharedObject,
+    obstacles: obstacles,
+    powerups: generatePowerups(obstacles,players, sharedObject),
     timeRemaining: GAME_DURATION,
     gameStarted: false,
     winner: null
   });
 
-  const checkCollision = useCallback((x1: number, y1: number, w1: number, x2: number, y2: number, w2: number) => {
-    return x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + w2 && y1 + w1 > y2;
-  }, []);
+
+  const checkCollision = useCallback(
+    (playerX: number, playerY: number, playerSize: number, obstacleX: number, obstacleY: number, obstacleSize: number) => {
+      // Check if the player's rectangle overlaps with the obstacle's rectangle
+      return (
+        playerX < obstacleX + obstacleSize &&  // Player's right side is not beyond obstacle's left side
+        playerX + playerSize > obstacleX &&    // Player's left side is not beyond obstacle's right side
+        playerY < obstacleY + obstacleSize &&  // Player's bottom side is not beyond obstacle's top side
+        playerY + playerSize > obstacleY       // Player's top side is not beyond obstacle's bottom side
+      );
+    },
+    []
+  );
 
   const movePlayer = useCallback((playerId: number, dx: number, dy: number) => {
     setGameState(prev => {
       const player = prev.players.find(p => p.id === playerId)!;
-      
-      // Check if player is frozen
-      if (player.powerups.freezeTimer > 0) return prev;
-
-      const speed = player.speed * 
-        (1 + (player.powerups.speedBoost > 0 ? SPEED_BOOST : 0)) *
-        (player.powerups.speedPenalty > 0 ? SPEED_PENALTY : 1);
-
+      const currentTime = Date.now();
+      const speedBoostActive = player.powerups.speedBoost > currentTime;
+      const speedPenaltyActive = player.powerups.speedPenalty > currentTime;
+  
+      let speed:number=player.speed
+      if(speedBoostActive){
+        speed = player.speed + SPEED_BOOST
+      }
+      if(speedPenaltyActive){
+        speed = 2
+      }  
       let newX = player.x + dx * speed;
       let newY = player.y + dy * speed;
-
+  
       // Boundary checks
       newX = Math.max(0, Math.min(CANVAS_SIZE - PLAYER_SIZE, newX));
       newY = Math.max(0, Math.min(CANVAS_SIZE - PLAYER_SIZE, newY));
-
+  
       // Obstacle collision checks
       for (const obstacle of prev.obstacles) {
         if (checkCollision(newX, newY, PLAYER_SIZE, obstacle.x, obstacle.y, obstacle.size)) {
-          if (obstacle.type === 'wall' && player.powerups.invincibility === 0) {
-            return prev; // Can't move through walls unless invincible
-          } else if (obstacle.type === 'mud') {
-            newX = player.x + (dx * speed * 0.5);
-            newY = player.y + (dy * speed * 0.5);
-          } else if (obstacle.type === 'ice') {
-            newX = player.x + (dx * speed * 1.5);
-            newY = player.y + (dy * speed * 1.5);
+          newX = player.x;
+          newY = player.y;
+        }
+      }
+    // Player-to-Player collision checks
+      for (const otherPlayer of prev.players) {
+        if (otherPlayer.id !== playerId) {
+          if (checkCollision(newX, newY, PLAYER_SIZE, otherPlayer.x, otherPlayer.y, PLAYER_SIZE)) {
+            newX = player.x;
+            newY = player.y;
           }
         }
       }
-
+  
       // Powerup collection
       const newPowerups = [...prev.powerups];
+      const newPlayers = [...prev.players];
+      const playerIndex = newPlayers.findIndex(p => p.id === playerId);
+  
       prev.powerups.forEach((powerup, index) => {
         if (powerup.active && checkCollision(newX, newY, PLAYER_SIZE, powerup.x, powerup.y, POWERUP_SIZE)) {
           newPowerups[index] = { ...powerup, active: false };
-          const newPlayers = [...prev.players];
-          const playerIndex = newPlayers.findIndex(p => p.id === playerId);
-          
+  
           switch (powerup.type) {
             case 'speed':
-              newPlayers[playerIndex].powerups.speedBoost = Date.now() + 5000;
+              newPlayers[playerIndex].powerups.speedBoost = Date.now() + 80000;
               break;
             case 'slow':
-              const otherPlayerIndex = playerIndex === 0 ? 1 : 0;
-              newPlayers[otherPlayerIndex].powerups.speedPenalty = Date.now() + 3000;
-              break;
-            case 'freeze':
-              const freezeTarget = playerIndex === 0 ? 1 : 0;
-              newPlayers[freezeTarget].powerups.freezeTimer = Date.now() + FREEZE_DURATION;
-              break;
-            case 'invincible':
-              newPlayers[playerIndex].powerups.invincibility = Date.now() + INVINCIBLE_DURATION;
+              newPlayers[playerIndex].powerups.speedPenalty = Date.now() + 100000;
               break;
           }
-          return { ...prev, players: newPlayers, powerups: newPowerups };
         }
       });
-
-      // Update shared object position if held
+  
       let newSharedObject = { ...prev.sharedObject };
-      if (player.hasObject) {
-        newSharedObject = {
-          ...newSharedObject,
-          x: newX + PLAYER_SIZE / 2 - OBJECT_SIZE / 2,
-          y: newY + PLAYER_SIZE / 2 - OBJECT_SIZE / 2
-        };
-      }
-
+  
       // Check if player can pick up shared object
-      if (!prev.sharedObject.isHeld &&
-          checkCollision(newX, newY, PLAYER_SIZE, prev.sharedObject.x, prev.sharedObject.y, OBJECT_SIZE)) {
+      if ( !prev.sharedObject.isHeld && checkCollision(newX, newY, PLAYER_SIZE, prev.sharedObject.x, prev.sharedObject.y, OBJECT_SIZE)
+      ) {
+        let newXPos: number = 0;
+        let newYPos: number = 0;
+        let isValidPosition = false;
+  
+        while (!isValidPosition) {
+          // Generate random positions within bounds
+          newXPos = Math.floor(Math.random() * (CANVAS_SIZE - OBJECT_SIZE));
+          newYPos = Math.floor(Math.random() * (CANVAS_SIZE - OBJECT_SIZE));
+  
+          // Check for collisions with obstacles and powerups
+          isValidPosition = !prev.obstacles.some((obstacle) =>
+            checkCollision(newXPos, newYPos, OBJECT_SIZE, obstacle.x, obstacle.y, obstacle.size)
+          ) && !prev.powerups.some((powerup) =>
+            powerup.active && checkCollision(newXPos, newYPos, OBJECT_SIZE, powerup.x, powerup.y, POWERUP_SIZE)
+          );
+        }
+  
         newSharedObject = {
-          ...newSharedObject,
-          isHeld: true,
-          holderId: playerId
+          isHeld: false,
+          holderId: null,
+          x: newXPos,
+          y: newYPos
         };
-        
-        const newPlayers = prev.players.map(p =>
-          p.id === playerId ? { ...p, hasObject: true, score: p.score + 1 } : p
-        );
-        
-        return {
-          ...prev,
-          players: newPlayers,
-          sharedObject: newSharedObject
-        };
+  
+          newPlayers[playerIndex].score += 1; // Increment score when object is picked
       }
-
-      const newPlayers = prev.players.map(p =>
-        p.id === playerId ? { ...p, x: newX, y: newY } : p
+  
+      // Update player position
+      const updatedPlayers = newPlayers.map(p =>
+        p.id === playerId ? { ...p, x: newX, y: newY} : p
       );
-
+  
       return {
         ...prev,
-        players: newPlayers,
+        players: updatedPlayers,
         sharedObject: newSharedObject,
         powerups: newPowerups
       };
     });
-  }, [checkCollision]);
-
+  }, []);
+  
   useEffect(() => {
     if (!gameState.gameStarted) return;
 
@@ -207,8 +332,6 @@ function App() {
           powerups: {
             speedBoost: Math.max(0, player.powerups.speedBoost - now),
             speedPenalty: Math.max(0, player.powerups.speedPenalty - now),
-            freezeTimer: Math.max(0, player.powerups.freezeTimer - now),
-            invincibility: Math.max(0, player.powerups.invincibility - now)
           }
         }));
 
@@ -225,46 +348,27 @@ function App() {
 
   useEffect(() => {
     if (gameState.timeRemaining <= 0) {
-      setGameState(prev => ({
-        ...prev,
-        gameStarted: false,
-        winner: prev.players[0].score > prev.players[1].score ? 1 : 2
-      }));
+      setGameState(prev => {
+        // Determine the player with the highest score
+        const highestScorePlayer = prev.players.reduce((maxPlayer, player) => 
+          player.score > maxPlayer.score ? player : maxPlayer
+        );
+    
+        return {
+          ...prev,
+          gameStarted: false,
+          winner: highestScorePlayer.id // Use the player ID as the winner
+        };
+      });
     }
   }, [gameState.timeRemaining]);
 
   const startGame = () => {
     setGameState({
-      players: [
-        {
-          id: 1,
-          x: 50,
-          y: 50,
-          speed: BASE_SPEED,
-          score: 0,
-          color: '#FF6B6B',
-          hasObject: false,
-          powerups: { speedBoost: 0, speedPenalty: 0, freezeTimer: 0, invincibility: 0 }
-        },
-        {
-          id: 2,
-          x: CANVAS_SIZE - 80,
-          y: CANVAS_SIZE - 80,
-          speed: BASE_SPEED,
-          score: 0,
-          color: '#4ECDC4',
-          hasObject: false,
-          powerups: { speedBoost: 0, speedPenalty: 0, freezeTimer: 0, invincibility: 0 }
-        }
-      ],
-      sharedObject: {
-        x: CANVAS_SIZE / 2 - OBJECT_SIZE / 2,
-        y: CANVAS_SIZE / 2 - OBJECT_SIZE / 2,
-        isHeld: false,
-        holderId: null
-      },
-      obstacles: generateObstacles(),
-      powerups: generatePowerups(),
+      players: players,
+      sharedObject: sharedObject,
+      obstacles: obstacles,
+      powerups: generatePowerups(obstacles,players, sharedObject),
       timeRemaining: GAME_DURATION,
       gameStarted: true,
       winner: null
@@ -275,16 +379,12 @@ function App() {
     switch (type) {
       case 'speed': return <Zap className="w-6 h-6 text-yellow-400" />;
       case 'slow': return <Snow className="w-6 h-6 text-blue-400" />;
-      case 'freeze': return <Snow className="w-6 h-6 text-cyan-400" />;
-      case 'invincible': return <Shield className="w-6 h-6 text-purple-400" />;
       default: return null;
     }
   };
 
   const getObstacleStyle = (type: string) => {
     switch (type) {
-      case 'wall': return 'bg-gray-700';
-      case 'mud': return 'bg-brown-600';
       case 'ice': return 'bg-blue-300';
       default: return '';
     }
@@ -326,7 +426,6 @@ function App() {
                 height: obstacle.size
               }}
             >
-              {obstacle.type === 'wall' && <Ghost className="w-6 h-6 text-gray-600" />}
             </div>
           ))}
 
@@ -372,8 +471,7 @@ function App() {
                 top: player.y,
                 width: PLAYER_SIZE,
                 height: PLAYER_SIZE,
-                opacity: player.powerups.freezeTimer > 0 ? 0.5 : 1,
-                boxShadow: player.powerups.invincibility > 0 ? '0 0 10px 5px rgba(147, 51, 234, 0.5)' : 'none'
+              
               }}
             />
           ))}
@@ -408,14 +506,6 @@ function App() {
               <Snow className="w-5 h-5 text-blue-400" />
               <span>Slow Enemy</span>
             </div>
-            <div className="flex items-center gap-2">
-              <Snow className="w-5 h-5 text-cyan-400" />
-              <span>Freeze</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Shield className="w-5 h-5 text-purple-400" />
-              <span>Invincible</span>
-            </div>
           </div>
         </div>
       </div>
@@ -424,3 +514,5 @@ function App() {
 }
 
 export default App;
+
+

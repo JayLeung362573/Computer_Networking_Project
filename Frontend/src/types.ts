@@ -5,15 +5,13 @@ export interface Player {
   speed: number;
   score: number;
   color: string;
-  hasObject: boolean;
+
   powerups: PowerupEffects;
 }
 
 export interface PowerupEffects {
   speedBoost: number;
   speedPenalty: number;
-  freezeTimer: number;
-  invincibility: number;
 }
 
 export interface SharedObject {
@@ -27,13 +25,13 @@ export interface Obstacle {
   x: number;
   y: number;
   size: number;
-  type: 'wall' | 'mud' | 'ice';
+  type: 'ice';
 }
 
 export interface Powerup {
   x: number;
   y: number;
-  type: 'speed' | 'slow' | 'freeze' | 'invincible';
+  type: 'speed' | 'slow';
   active: boolean;
 }
 
@@ -47,13 +45,11 @@ export interface GameState {
   winner: number | null;
 }
 
-export const CANVAS_SIZE = 800;
-export const PLAYER_SIZE = 30;
-export const OBJECT_SIZE = 20;
+export const CANVAS_SIZE = 550;
+export const PLAYER_SIZE = 25;
+export const OBJECT_SIZE = 30;
 export const POWERUP_SIZE = 25;
 export const GAME_DURATION = 60; // seconds
-export const BASE_SPEED = 5;
-export const SPEED_BOOST = 2;
-export const SPEED_PENALTY = 0.5;
-export const FREEZE_DURATION = 3000; // milliseconds
-export const INVINCIBLE_DURATION = 5000; // milliseconds
+export const BASE_SPEED = 15;
+export const SPEED_BOOST = 10;
+export const SPEED_PENALTY = -30;
