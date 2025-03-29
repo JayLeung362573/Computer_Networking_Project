@@ -45,6 +45,9 @@ export interface GameState {
   winner: number | null;
 }
 
+// for socket connection 
+export type MessageHandler = (data: any) => void;
+
 export const CANVAS_SIZE = 550;
 export const PLAYER_SIZE = 25;
 export const OBJECT_SIZE = 30;
