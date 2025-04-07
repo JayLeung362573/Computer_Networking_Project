@@ -6,6 +6,7 @@ import time
 import sys
 from pygame.locals import *
 
+
 # Game Constants
 CANVAS_SIZE = 700
 PLAYER_SIZE = 30
@@ -41,6 +42,15 @@ PLAYER_CONTROLS = [
     {"up": K_i, "down": K_k, "left": K_j, "right": K_l, "name": "IJKL"},
     {"up": K_t, "down": K_g, "left": K_f, "right": K_h, "name": "TFGH"}
 ]
+
+# Load the music
+# initialize the mixer
+pygame.mixer.init()
+# load the music    
+pygame.mixer.music.load("BG_Music.mp3")
+# set the volume
+pygame.mixer.music.set_volume(0.7)
+
 
 class GameClient:
     def __init__(self):
@@ -303,6 +313,8 @@ class GameClient:
             if not self.connected:
                 self.render_connecting_screen()
             elif not self.game_state or not self.game_state.get("gameStarted"):
+                # play game music
+                pygame.mixer.music.play(-1)
                 self.render_lobby_screen()
             else:
                 self.render_game()
@@ -322,4 +334,5 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error: {e}")
     finally:
+        pygame.mixer.music.play(-1)
         client.cleanup()
