@@ -6,13 +6,12 @@ import time
 import sys
 from pygame.locals import *
 
-
 # Game Constants
 CANVAS_SIZE = 700
 PLAYER_SIZE = 30
 OBJECT_SIZE = 20
 POWERUP_SIZE = 15
-GAME_DURATION = 120
+GAME_DURATION = 20
 BASE_SPEED = 5
 MAX_PLAYERS = 4
 
@@ -25,6 +24,8 @@ YELLOW = (255, 215, 0)
 BLUE_ICE = (140, 190, 230)
 YELLOW_SPEED = (255, 255, 0)
 BLUE_SLOW = (30, 144, 255)
+PURPLE = (75, 0, 130)
+LIGHT_PURPLE = (100, 50, 150)
 
 COLOR_MAP = {
     "red": (255, 0, 0),
@@ -46,7 +47,7 @@ PLAYER_CONTROLS = [
 # Load the music
 # initialize the mixer
 pygame.mixer.init()
-# load the music    
+# load the music
 pygame.mixer.music.load("BG_Music.mp3")
 # set the volume
 pygame.mixer.music.set_volume(0.7)
@@ -67,7 +68,8 @@ class GameClient:
         # Initialize game state with default values
         self.game_state = {
             "players": [],
-            "sharedObject": {"x": CANVAS_SIZE / 2 - OBJECT_SIZE / 2, "y": CANVAS_SIZE / 2 - OBJECT_SIZE / 2, "isHeld": False, "holderId": None},
+            "sharedObject": {"x": CANVAS_SIZE / 2 - OBJECT_SIZE / 2, "y": CANVAS_SIZE / 2 - OBJECT_SIZE / 2,
+                             "isHeld": False, "holderId": None},
             "obstacles": [],
             "powerups": [],
             "timeRemaining": GAME_DURATION,
@@ -77,6 +79,7 @@ class GameClient:
         self.player_id = None
         self.connected = False
         self.connection_error = None
+        self.game_ended = False
 
         self.socket = None
         self.receive_thread = None
@@ -112,8 +115,10 @@ class GameClient:
         pygame.draw.circle(icon, BLUE_SLOW, (POWERUP_SIZE // 2, POWERUP_SIZE // 2), POWERUP_SIZE // 2)
         pygame.draw.line(icon, WHITE, (POWERUP_SIZE // 2, 2), (POWERUP_SIZE // 2, POWERUP_SIZE - 2), 2)
         pygame.draw.line(icon, WHITE, (2, POWERUP_SIZE // 2), (POWERUP_SIZE - 2, POWERUP_SIZE // 2), 2)
-        pygame.draw.line(icon, WHITE, (POWERUP_SIZE * 0.25, POWERUP_SIZE * 0.25), (POWERUP_SIZE * 0.75, POWERUP_SIZE * 0.75), 2)
-        pygame.draw.line(icon, WHITE, (POWERUP_SIZE * 0.25, POWERUP_SIZE * 0.75), (POWERUP_SIZE * 0.75, POWERUP_SIZE * 0.25), 2)
+        pygame.draw.line(icon, WHITE, (POWERUP_SIZE * 0.25, POWERUP_SIZE * 0.25),
+                         (POWERUP_SIZE * 0.75, POWERUP_SIZE * 0.75), 2)
+        pygame.draw.line(icon, WHITE, (POWERUP_SIZE * 0.25, POWERUP_SIZE * 0.75),
+                         (POWERUP_SIZE * 0.75, POWERUP_SIZE * 0.25), 2)
         return icon
 
     def connect_to_server(self):
@@ -173,7 +178,11 @@ class GameClient:
             new_game_state = message.get("gameState")
             if new_game_state:
                 self.game_state.update(new_game_state)
-            print(f"Received game state update for Player {self.player_id}: gameStarted={self.game_state.get('gameStarted', False)}")
+                # Check if the game just ended
+                if not self.game_state.get("gameStarted", False) and self.game_state.get("winner") is not None:
+                    self.game_ended = True
+            print(
+                f"Received game state update for Player {self.player_id}: gameStarted={self.game_state.get('gameStarted', False)}")
             for player in self.game_state.get("players", []):
                 if player["id"] == self.player_id:
                     print(f"Player {self.player_id} position: ({player['x']}, {player['y']})")
@@ -192,13 +201,15 @@ class GameClient:
 
     def move_player(self, direction):
         if not self.connected or not self.player_id or not self.game_state or not self.game_state.get("gameStarted"):
-            print(f"Cannot move: connected={self.connected}, player_id={self.player_id}, game_started={self.game_state.get('gameStarted') if self.game_state else False}")
+            print(
+                f"Cannot move: connected={self.connected}, player_id={self.player_id}, game_started={self.game_state.get('gameStarted') if self.game_state else False}")
             return
         self.send_message({"type": "move", "direction": direction, "playerId": self.player_id})
 
     def start_game(self):
         if not self.connected or not self.is_player_one():
             return
+        self.game_ended = False
         self.send_message({"type": "start_game"})
 
     def handle_input(self):
@@ -207,11 +218,17 @@ class GameClient:
                 self.running = False
                 pygame.quit()
                 sys.exit()
-            if event.type == MOUSEBUTTONDOWN and self.game_state and not self.game_state.get("gameStarted") and self.is_player_one():
+            if event.type == MOUSEBUTTONDOWN:
                 mouse_pos = pygame.mouse.get_pos()
-                button_rect = pygame.Rect(CANVAS_SIZE // 2 - 80, CANVAS_SIZE + 50, 160, 40)
-                if button_rect.collidepoint(mouse_pos):
-                    self.start_game()
+
+                # Start game button in lobby
+                if self.game_state and not self.game_state.get(
+                        "gameStarted") and not self.game_ended and self.is_player_one():
+                    start_button_rect = pygame.Rect(CANVAS_SIZE // 2 - 80, CANVAS_SIZE + 50, 160, 40)
+                    if start_button_rect.collidepoint(mouse_pos):
+                        self.start_game()
+
+                # Play Again button removed from here
 
         if self.game_state and self.game_state.get("gameStarted") and self.player_id is not None:
             keys = pygame.key.get_pressed()
@@ -252,19 +269,65 @@ class GameClient:
         y_pos = 160
         for player in self.game_state.get("players", []):
             player_color = COLOR_MAP.get(player.get("color", "red"), (255, 0, 0))
-            text = self.font_medium.render(f"Player {player['id']}{' (You)' if player['id'] == self.player_id else ''}", True, player_color)
+            text = self.font_medium.render(f"Player {player['id']}{' (You)' if player['id'] == self.player_id else ''}",
+                                           True, player_color)
             self.screen.blit(text, (CANVAS_SIZE // 2 - text.get_width() // 2, y_pos))
             y_pos += 30
 
         if self.is_player_one():
             button_rect = pygame.Rect(CANVAS_SIZE // 2 - 80, CANVAS_SIZE + 50, 160, 40)
-            pygame.draw.rect(self.screen, (75, 0, 130), button_rect)
-            pygame.draw.rect(self.screen, (100, 50, 150), button_rect, 2)
+            pygame.draw.rect(self.screen, PURPLE, button_rect)
+            pygame.draw.rect(self.screen, LIGHT_PURPLE, button_rect, 2)
             start_text = self.font_medium.render("Start Game", True, WHITE)
-            self.screen.blit(start_text, (button_rect.centerx - start_text.get_width() // 2, button_rect.centery - start_text.get_height() // 2))
+            self.screen.blit(start_text, (
+            button_rect.centerx - start_text.get_width() // 2, button_rect.centery - start_text.get_height() // 2))
         else:
             wait_text = self.font_medium.render("Waiting for Player 1...", True, WHITE)
             self.screen.blit(wait_text, (CANVAS_SIZE // 2 - wait_text.get_width() // 2, CANVAS_SIZE + 60))
+
+    def render_game_over_screen(self):
+        self.screen.fill(DARK_GRAY)
+
+        # Display winner
+        winner = self.game_state.get("winner")
+        winner_player = next((p for p in self.game_state.get("players", []) if p["id"] == winner), None)
+
+        # Game over title
+        text = self.font_large.render("GAME OVER", True, WHITE)
+        self.screen.blit(text, (CANVAS_SIZE // 2 - text.get_width() // 2, CANVAS_SIZE // 4))
+
+        # Winner information
+        if winner_player:
+            winner_color = COLOR_MAP.get(winner_player.get("color", "red"), (255, 0, 0))
+            winner_text = self.font_large.render(f"Player {winner} Wins!", True, winner_color)
+            you_text = ""
+            if winner == self.player_id:
+                you_text = self.font_large.render("Congratulations!", True, WHITE)
+            else:
+                you_text = self.font_large.render("Better luck next time!", True, WHITE)
+
+            self.screen.blit(winner_text, (CANVAS_SIZE // 2 - winner_text.get_width() // 2, CANVAS_SIZE // 3))
+            self.screen.blit(you_text, (CANVAS_SIZE // 2 - you_text.get_width() // 2, CANVAS_SIZE // 3 + 40))
+
+        # Display final scores
+        text = self.font_medium.render("Final Scores:", True, WHITE)
+        self.screen.blit(text, (CANVAS_SIZE // 2 - text.get_width() // 2, CANVAS_SIZE // 2))
+
+        y_pos = CANVAS_SIZE // 2 + 30
+        for player in sorted(self.game_state.get("players", []), key=lambda p: p.get("score", 0), reverse=True):
+            player_color = COLOR_MAP.get(player.get("color", "red"), (255, 0, 0))
+            score_text = self.font_medium.render(
+                f"Player {player['id']}: {player['score']} points{' (You)' if player['id'] == self.player_id else ''}",
+                True,
+                player_color
+            )
+            self.screen.blit(score_text, (CANVAS_SIZE // 2 - score_text.get_width() // 2, y_pos))
+            y_pos += 30
+
+        # Play Again button removed
+        # Added informational text for all players
+        info_text = self.font_medium.render("Game session ended", True, WHITE)
+        self.screen.blit(info_text, (CANVAS_SIZE // 2 - info_text.get_width() // 2, CANVAS_SIZE // 2 + 90))
 
     def render_game(self):
         self.screen.fill(DARK_GRAY)
@@ -297,24 +360,23 @@ class GameClient:
         score_x = 20
         for player in self.game_state.get("players", []):
             player_color = COLOR_MAP.get(player.get("color", "red"), (255, 0, 0))
-            score_text = self.font_medium.render(f"P{player['id']}: {player['score']}{' (You)' if player['id'] == self.player_id else ''}", True, player_color)
+            score_text = self.font_medium.render(
+                f"P{player['id']}: {player['score']}{' (You)' if player['id'] == self.player_id else ''}", True,
+                player_color)
             self.screen.blit(score_text, (score_x, CANVAS_SIZE + 40))
             score_x += 150
-
-        if not self.game_state.get("gameStarted", False) and self.game_state.get("winner"):
-            winner = self.game_state.get("winner")
-            winner_color = next((COLOR_MAP.get(p["color"], (255, 0, 0)) for p in self.game_state["players"] if p["id"] == winner), WHITE)
-            winner_text = self.font_large.render(f"Player {winner} Wins!{' (You)' if winner == self.player_id else ''}", True, winner_color)
-            self.screen.blit(winner_text, (CANVAS_SIZE // 2 - winner_text.get_width() // 2, CANVAS_SIZE + 10))
 
     def run(self):
         while self.running:
             self.handle_input()
             if not self.connected:
                 self.render_connecting_screen()
+            elif self.game_ended:
+                self.render_game_over_screen()
             elif not self.game_state or not self.game_state.get("gameStarted"):
                 # play game music
-                pygame.mixer.music.play(-1)
+                if not pygame.mixer.music.get_busy():
+                    pygame.mixer.music.play(-1)
                 self.render_lobby_screen()
             else:
                 self.render_game()
@@ -327,6 +389,7 @@ class GameClient:
             self.socket.close()
         pygame.quit()
 
+
 if __name__ == "__main__":
     client = GameClient()
     try:
@@ -334,5 +397,5 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error: {e}")
     finally:
-        pygame.mixer.music.play(-1)
+        pygame.mixer.music.stop()  # Stop music before quitting
         client.cleanup()
