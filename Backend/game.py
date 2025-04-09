@@ -11,9 +11,11 @@ CANVAS_SIZE = 700
 PLAYER_SIZE = 30
 OBJECT_SIZE = 20
 POWERUP_SIZE = 15
-GAME_DURATION = 20
+RED_STAR_SIZE = 25  # Size of the special red star
+GAME_DURATION = 120
 BASE_SPEED = 5
 MAX_PLAYERS = 4
+RED_STAR_CLICKS_REQUIRED = 5  # Clicks required to collect the red star
 
 # Colors
 WHITE = (255, 255, 255)
@@ -26,6 +28,8 @@ YELLOW_SPEED = (255, 255, 0)
 BLUE_SLOW = (30, 144, 255)
 PURPLE = (75, 0, 130)
 LIGHT_PURPLE = (100, 50, 150)
+RED = (255, 0, 0)
+BRIGHT_RED = (255, 50, 50)
 
 COLOR_MAP = {
     "red": (255, 0, 0),
@@ -44,12 +48,11 @@ PLAYER_CONTROLS = [
     {"up": K_t, "down": K_g, "left": K_f, "right": K_h, "name": "TFGH"}
 ]
 
-# Load the music
-# initialize the mixer
+# Initialize the mixer
 pygame.mixer.init()
-# load the music
+# Load the music
 pygame.mixer.music.load("BG_Music.mp3")
-# set the volume
+# Set the volume
 pygame.mixer.music.set_volume(0.7)
 
 
@@ -74,7 +77,15 @@ class GameClient:
             "powerups": [],
             "timeRemaining": GAME_DURATION,
             "gameStarted": False,
-            "winner": None
+            "winner": None,
+            "redStar": {
+                "active": False,
+                "x": 0,
+                "y": 0,
+                "clicksRequired": RED_STAR_CLICKS_REQUIRED,
+                "clicksByPlayer": {},
+                "expiresAt": 0
+            }
         }
         self.player_id = None
         self.connected = False
@@ -88,6 +99,7 @@ class GameClient:
         self.star_icon = self.create_star_icon()
         self.speed_icon = self.create_speed_icon()
         self.slow_icon = self.create_slow_icon()
+        self.red_star_icon = self.create_red_star_icon()
 
         self.connect_to_server()
 
@@ -99,6 +111,25 @@ class GameClient:
             (OBJECT_SIZE / 2, OBJECT_SIZE * 0.85), (OBJECT_SIZE * 0.2, OBJECT_SIZE),
             (OBJECT_SIZE * 0.25, OBJECT_SIZE * 0.65), (0, OBJECT_SIZE * 0.4), (OBJECT_SIZE * 0.35, OBJECT_SIZE * 0.35)
         ])
+        return icon
+
+    def create_red_star_icon(self):
+        icon = pygame.Surface((RED_STAR_SIZE, RED_STAR_SIZE), pygame.SRCALPHA)
+        pygame.draw.polygon(icon, RED, [
+            (RED_STAR_SIZE / 2, 0), (RED_STAR_SIZE * 0.65, RED_STAR_SIZE * 0.35), (RED_STAR_SIZE, RED_STAR_SIZE * 0.4),
+            (RED_STAR_SIZE * 0.75, RED_STAR_SIZE * 0.65), (RED_STAR_SIZE * 0.8, RED_STAR_SIZE),
+            (RED_STAR_SIZE / 2, RED_STAR_SIZE * 0.85), (RED_STAR_SIZE * 0.2, RED_STAR_SIZE),
+            (RED_STAR_SIZE * 0.25, RED_STAR_SIZE * 0.65), (0, RED_STAR_SIZE * 0.4),
+            (RED_STAR_SIZE * 0.35, RED_STAR_SIZE * 0.35)
+        ])
+        # Add a glowing effect (pulsating outline)
+        pygame.draw.polygon(icon, BRIGHT_RED, [
+            (RED_STAR_SIZE / 2, 0), (RED_STAR_SIZE * 0.65, RED_STAR_SIZE * 0.35), (RED_STAR_SIZE, RED_STAR_SIZE * 0.4),
+            (RED_STAR_SIZE * 0.75, RED_STAR_SIZE * 0.65), (RED_STAR_SIZE * 0.8, RED_STAR_SIZE),
+            (RED_STAR_SIZE / 2, RED_STAR_SIZE * 0.85), (RED_STAR_SIZE * 0.2, RED_STAR_SIZE),
+            (RED_STAR_SIZE * 0.25, RED_STAR_SIZE * 0.65), (0, RED_STAR_SIZE * 0.4),
+            (RED_STAR_SIZE * 0.35, RED_STAR_SIZE * 0.35)
+        ], 2)
         return icon
 
     def create_speed_icon(self):
@@ -206,12 +237,18 @@ class GameClient:
             return
         self.send_message({"type": "move", "direction": direction, "playerId": self.player_id})
 
+    def click_red_star(self):
+        if not self.connected or not self.player_id or not self.game_state or not self.game_state.get("gameStarted"):
+            return
+        self.send_message({"type": "click_red_star", "playerId": self.player_id})
+
     def start_game(self):
         if not self.connected or not self.is_player_one():
             return
         self.game_ended = False
         self.send_message({"type": "start_game"})
 
+    # In the GameClient class, update the handle_input method
     def handle_input(self):
         for event in pygame.event.get():
             if event.type == QUIT:
@@ -228,7 +265,20 @@ class GameClient:
                     if start_button_rect.collidepoint(mouse_pos):
                         self.start_game()
 
-                # Play Again button removed from here
+                # Check if the red star was clicked
+                if self.game_state and self.game_state.get("gameStarted") and self.player_id is not None:
+                    red_star = self.game_state.get("redStar", {})
+                    if red_star.get("active", False):
+                        # Get the player object
+                        player = next((p for p in self.game_state.get("players", []) if p["id"] == self.player_id),
+                                      None)
+                        if player:
+                            # Check if mouse is over red star
+                            red_star_rect = pygame.Rect(red_star["x"], red_star["y"], RED_STAR_SIZE, RED_STAR_SIZE)
+                            if red_star_rect.collidepoint(mouse_pos):
+                                # Send the click to the server - removed the player collision check
+                                self.click_red_star()
+                                print(f"Player {self.player_id} clicked red star!")
 
         if self.game_state and self.game_state.get("gameStarted") and self.player_id is not None:
             keys = pygame.key.get_pressed()
@@ -242,6 +292,7 @@ class GameClient:
                 self.move_player("left")
             if keys[controls["right"]]:
                 self.move_player("right")
+
 
     def is_player_one(self):
         return self.player_id == 1
@@ -274,13 +325,26 @@ class GameClient:
             self.screen.blit(text, (CANVAS_SIZE // 2 - text.get_width() // 2, y_pos))
             y_pos += 30
 
+        # Game instructions
+        y_pos += 30
+        instructions_text = self.font_medium.render("Game Instructions:", True, WHITE)
+        self.screen.blit(instructions_text, (CANVAS_SIZE // 2 - instructions_text.get_width() // 2, y_pos))
+
+        y_pos += 30
+        controls_text = self.font_small.render("Use your controls to move and collect the yellow star.", True, WHITE)
+        self.screen.blit(controls_text, (CANVAS_SIZE // 2 - controls_text.get_width() // 2, y_pos))
+
+        y_pos += 20
+        red_star_text = self.font_small.render("Click the special RED star 5 times to get 5 bonus points!", True, RED)
+        self.screen.blit(red_star_text, (CANVAS_SIZE // 2 - red_star_text.get_width() // 2, y_pos))
+
         if self.is_player_one():
             button_rect = pygame.Rect(CANVAS_SIZE // 2 - 80, CANVAS_SIZE + 50, 160, 40)
             pygame.draw.rect(self.screen, PURPLE, button_rect)
             pygame.draw.rect(self.screen, LIGHT_PURPLE, button_rect, 2)
             start_text = self.font_medium.render("Start Game", True, WHITE)
             self.screen.blit(start_text, (
-            button_rect.centerx - start_text.get_width() // 2, button_rect.centery - start_text.get_height() // 2))
+                button_rect.centerx - start_text.get_width() // 2, button_rect.centery - start_text.get_height() // 2))
         else:
             wait_text = self.font_medium.render("Waiting for Player 1...", True, WHITE)
             self.screen.blit(wait_text, (CANVAS_SIZE // 2 - wait_text.get_width() // 2, CANVAS_SIZE + 60))
@@ -324,8 +388,7 @@ class GameClient:
             self.screen.blit(score_text, (CANVAS_SIZE // 2 - score_text.get_width() // 2, y_pos))
             y_pos += 30
 
-        # Play Again button removed
-        # Added informational text for all players
+        # Informational text for all players
         info_text = self.font_medium.render("Game session ended", True, WHITE)
         self.screen.blit(info_text, (CANVAS_SIZE // 2 - info_text.get_width() // 2, CANVAS_SIZE // 2 + 90))
 
@@ -346,6 +409,18 @@ class GameClient:
         shared_obj = self.game_state.get("sharedObject", {})
         self.screen.blit(self.star_icon, (shared_obj.get("x", 0), shared_obj.get("y", 0)))
 
+        # Render red star if active
+        red_star = self.game_state.get("redStar", {})
+        if red_star.get("active", False):
+            self.screen.blit(self.red_star_icon, (red_star.get("x", 0), red_star.get("y", 0)))
+
+            # Draw progress indicator for the current player
+            current_player_clicks = red_star.get("clicksByPlayer", {}).get(str(self.player_id), 0)
+            if current_player_clicks > 0:
+                progress_text = self.font_small.render(f"{current_player_clicks}/{RED_STAR_CLICKS_REQUIRED}", True,
+                                                       WHITE)
+                self.screen.blit(progress_text, (red_star.get("x", 0), red_star.get("y", 0) - 20))
+
         for player in self.game_state.get("players", []):
             player_color = COLOR_MAP.get(player.get("color", "red"), (255, 0, 0))
             player_rect = pygame.Rect(player["x"], player["y"], PLAYER_SIZE, PLAYER_SIZE)
@@ -362,11 +437,21 @@ class GameClient:
             player_color = COLOR_MAP.get(player.get("color", "red"), (255, 0, 0))
             score_text = self.font_medium.render(
                 f"P{player['id']}: {player['score']}{' (You)' if player['id'] == self.player_id else ''}", True,
-                player_color)
+                player_color
+            )
             self.screen.blit(score_text, (score_x, CANVAS_SIZE + 40))
             score_x += 150
 
+        # Display red star status if active
+        if red_star.get("active", False):
+            time_left = max(0, red_star.get("expiresAt", 0) - time.time())
+            red_star_text = self.font_medium.render(f"RED STAR! {time_left:.1f}s", True, RED)
+            self.screen.blit(red_star_text, (CANVAS_SIZE - 150, CANVAS_SIZE + 40))
+
     def run(self):
+        # Start the music
+        #pygame.mixer.music.play(-1)  # -1 means loop indefinitely
+
         while self.running:
             self.handle_input()
             if not self.connected:
@@ -374,9 +459,6 @@ class GameClient:
             elif self.game_ended:
                 self.render_game_over_screen()
             elif not self.game_state or not self.game_state.get("gameStarted"):
-                # play game music
-                if not pygame.mixer.music.get_busy():
-                    pygame.mixer.music.play(-1)
                 self.render_lobby_screen()
             else:
                 self.render_game()
@@ -387,6 +469,7 @@ class GameClient:
         self.running = False
         if self.socket:
             self.socket.close()
+        pygame.mixer.music.stop()  # Stop music before quitting
         pygame.quit()
 
 
@@ -397,5 +480,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error: {e}")
     finally:
-        pygame.mixer.music.stop()  # Stop music before quitting
         client.cleanup()

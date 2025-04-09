@@ -11,13 +11,19 @@ CANVAS_SIZE = 700
 PLAYER_SIZE = 30
 OBJECT_SIZE = 20
 POWERUP_SIZE = 15
-GAME_DURATION = 20
+RED_STAR_SIZE = 25  # Size of the special red star
+GAME_DURATION = 120
 BASE_SPEED = 5
 SPEED_BOOST = 3
 SPEED_PENALTY = 2
 NUM_OBSTACLES = 18
 NUM_POWERUPS = 4
 MAX_PLAYERS = 4
+RED_STAR_POINTS = 5  # Points awarded for collecting the red star
+RED_STAR_CLICKS_REQUIRED = 5  # Clicks required to collect the red star
+RED_STAR_DURATION = 5  # Duration in seconds that the red star stays on screen
+RED_STAR_MIN_INTERVAL = 15  # Minimum seconds between red star appearances
+RED_STAR_MAX_INTERVAL = 30  # Maximum seconds between red star appearances
 
 STARTING_POSITIONS = [
     {"x": 10, "y": 10, "color": "red"},
@@ -43,9 +49,18 @@ class GameServer:
             "powerups": [],
             "timeRemaining": GAME_DURATION,
             "gameStarted": False,
-            "winner": None
+            "winner": None,
+            "redStar": {
+                "active": False,
+                "x": 0,
+                "y": 0,
+                "clicksRequired": RED_STAR_CLICKS_REQUIRED,
+                "clicksByPlayer": {},  # Track clicks by each player
+                "expiresAt": 0  # Time when the red star will disappear
+            }
         }
         self.game_timer = None
+        self.red_star_timer = None
 
     def start_server(self):
         try:
@@ -67,6 +82,8 @@ class GameServer:
         print("Shutting down server...")
         if self.game_timer:
             self.game_timer.cancel()
+        if self.red_star_timer:
+            self.red_star_timer.cancel()
         for _, (client_socket, _, _) in list(self.clients.items()):
             try:
                 client_socket.close()
@@ -153,6 +170,61 @@ class GameServer:
         elif msg_type == "start_game" and player_id == 1:
             print("Starting game by Player 1")
             self.start_game()
+        elif msg_type == "click_red_star":
+            received_player_id = message.get("playerId")
+            if received_player_id == player_id:
+                print(f"Player {player_id} clicked red star")
+                self.handle_red_star_click(player_id)
+
+    # In the GameServer class, update the handle_red_star_click method
+    def handle_red_star_click(self, player_id):
+        red_star = self.game_state["redStar"]
+        if not red_star["active"] or time.time() > red_star["expiresAt"]:
+            return
+
+        # Find the player
+        player = next((p for p in self.game_state["players"] if p["id"] == player_id), None)
+        if not player:
+            return
+
+        # Check if player's position is within range of the red star (more lenient)
+        # Calculate distance between player center and red star center
+        # player_center_x = player["x"] + PLAYER_SIZE / 2
+        # player_center_y = player["y"] + PLAYER_SIZE / 2
+        # star_center_x = red_star["x"] + RED_STAR_SIZE / 2
+        # star_center_y = red_star["y"] + RED_STAR_SIZE / 2
+
+        # # Use a more generous interaction range - player can click from a distance
+        # interaction_distance = PLAYER_SIZE + RED_STAR_SIZE * 5  # More lenient distance
+        # distance = ((player_center_x - star_center_x) ** 2 + (player_center_y - star_center_y) ** 2) ** 0.5
+
+        # if distance > interaction_distance:
+        #     print(f"Player {player_id} clicked but is too far from red star")
+        #     return
+
+        # Store player ID as string to ensure consistent dictionary key type
+        player_id_str = str(player_id)
+
+        # Update clicks for this player
+        if player_id_str not in red_star["clicksByPlayer"]:
+            red_star["clicksByPlayer"][player_id_str] = 0
+        red_star["clicksByPlayer"][player_id_str] += 1
+
+        print(
+            f"Player {player_id} clicked red star ({red_star['clicksByPlayer'][player_id_str]}/{RED_STAR_CLICKS_REQUIRED})")
+
+        # Check if this player has clicked enough times
+        if red_star["clicksByPlayer"][player_id_str] >= RED_STAR_CLICKS_REQUIRED:
+            print(f"Player {player_id} collected red star! +{RED_STAR_POINTS} points")
+            player["score"] += RED_STAR_POINTS
+            red_star["active"] = False
+            red_star["clicksByPlayer"] = {}
+            if self.red_star_timer:
+                self.red_star_timer.cancel()
+            self.schedule_red_star()
+
+        self.broadcast_game_state()
+
 
     def move_player(self, player_id, direction):
         print(f"[Server] move_player() called for Player {player_id} direction: {direction}")
@@ -281,13 +353,92 @@ class GameServer:
         self.game_state["timeRemaining"] = GAME_DURATION
         self.game_state["gameStarted"] = True
         self.game_state["winner"] = None
+        self.game_state["redStar"]["active"] = False
+        self.game_state["redStar"]["clicksByPlayer"] = {}
+
         print("Game started")
         self.broadcast_game_state()
+
         if self.game_timer:
             self.game_timer.cancel()
         self.game_timer = threading.Timer(1.0, self.update_game_timer)
         self.game_timer.daemon = True
         self.game_timer.start()
+
+        # Schedule the first red star appearance
+        self.schedule_red_star()
+
+    def schedule_red_star(self):
+        if not self.game_state["gameStarted"]:
+            return
+
+        interval = random.randint(RED_STAR_MIN_INTERVAL, RED_STAR_MAX_INTERVAL)
+        print(f"[Server] Scheduling red star to appear in {interval} seconds")
+
+        if self.red_star_timer:
+            self.red_star_timer.cancel()
+
+        self.red_star_timer = threading.Timer(interval, self.spawn_red_star)
+        self.red_star_timer.daemon = True
+        self.red_star_timer.start()
+
+    def spawn_red_star(self):
+        if not self.game_state["gameStarted"]:
+            return
+
+        print("[Server] 🔴 Spawning red star")
+
+        valid_position = False
+        while not valid_position:
+            x = random.randint(0, CANVAS_SIZE - RED_STAR_SIZE)
+            y = random.randint(0, CANVAS_SIZE - RED_STAR_SIZE)
+
+            valid_position = True
+
+            # Check collision with obstacles
+            for obstacle in self.game_state["obstacles"]:
+                if self.check_collision(x, y, RED_STAR_SIZE, obstacle["x"], obstacle["y"], obstacle["size"]):
+                    valid_position = False
+                    break
+
+            # Check collision with powerups
+            if valid_position:
+                for powerup in self.game_state["powerups"]:
+                    if powerup["active"] and self.check_collision(x, y, RED_STAR_SIZE,
+                                                                  powerup["x"], powerup["y"], POWERUP_SIZE):
+                        valid_position = False
+                        break
+
+            # Check collision with shared object
+            if valid_position:
+                shared_obj = self.game_state["sharedObject"]
+                if self.check_collision(x, y, RED_STAR_SIZE, shared_obj["x"], shared_obj["y"], OBJECT_SIZE):
+                    valid_position = False
+
+        # Set red star properties
+        self.game_state["redStar"]["active"] = True
+        self.game_state["redStar"]["x"] = x
+        self.game_state["redStar"]["y"] = y
+        self.game_state["redStar"]["clicksByPlayer"] = {}
+        self.game_state["redStar"]["expiresAt"] = time.time() + RED_STAR_DURATION
+
+        # Broadcast the updated game state
+        self.broadcast_game_state()
+
+        # Schedule the red star to disappear
+        disappear_timer = threading.Timer(RED_STAR_DURATION, self.remove_red_star)
+        disappear_timer.daemon = True
+        disappear_timer.start()
+
+    def remove_red_star(self):
+        if self.game_state["redStar"]["active"]:
+            print("[Server] 🔴 Red star disappeared (timeout)")
+            self.game_state["redStar"]["active"] = False
+            self.game_state["redStar"]["clicksByPlayer"] = {}
+            self.broadcast_game_state()
+
+        # Schedule the next red star
+        self.schedule_red_star()
 
     def update_game_timer(self):
         if not self.game_state["gameStarted"]:
@@ -314,6 +465,12 @@ class GameServer:
                 winner_id = player["id"]
         self.game_state["gameStarted"] = False
         self.game_state["winner"] = winner_id
+
+        # Clear any active red star
+        self.game_state["redStar"]["active"] = False
+        if self.red_star_timer:
+            self.red_star_timer.cancel()
+
         print(f"Game ended. Winner: Player {winner_id}")
         self.broadcast_game_state()
 
@@ -406,6 +563,9 @@ class GameServer:
             if self.game_timer:
                 self.game_timer.cancel()
                 self.game_timer = None
+            if self.red_star_timer:
+                self.red_star_timer.cancel()
+                self.red_star_timer = None
         self.broadcast_game_state()
 
     def game_loop(self):
@@ -415,6 +575,11 @@ class GameServer:
                 for player in self.game_state["players"]:
                     player["powerups"]["speedBoost"] = max(0, player["powerups"]["speedBoost"])
                     player["powerups"]["speedPenalty"] = max(0, player["powerups"]["speedPenalty"])
+
+                # Check if red star has expired
+                if self.game_state["redStar"]["active"] and time.time() > self.game_state["redStar"]["expiresAt"]:
+                    self.remove_red_star()
+
             time.sleep(0.01)
 
 
