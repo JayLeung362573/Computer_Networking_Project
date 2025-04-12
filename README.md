@@ -31,18 +31,6 @@ The game is built using a **client-server architecture**:
 
 ---
 
-### 🔄 Shared Object & Concurrency Control
-
-The **red star** acts as a **shared object**, meaning all connected players may attempt to capture it at the same time. To avoid race conditions and maintain consistent game state:
-
-- A **mutex lock** (`threading.Lock`) is used to ensure **thread-safe** access
-- Each player's interaction is managed by a **separate thread**
-- Locking ensures that only one player can successfully collect the red star at a time
-
-This ensures accurate scoring and fair play across all clients.
-
----
-
 ## 🧪 How to Run
 
 ### Requirements
