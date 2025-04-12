@@ -156,20 +156,31 @@ class GameServer:
             data += packet
         return data
 
+
     def process_client_message(self, client_id, message):
+        # Process the message from the client
         msg_type = message.get("type")
+        # Get the player ID from the client
         player_id = self.clients[client_id][2]
+        # Check if the player ID is valid
         if msg_type == "move":
+            # Get the direction from the message
             direction = message.get("direction")
+            # Check if the direction is valid
             received_player_id = message.get("playerId")
+            # Check if the player ID matches
             if received_player_id == player_id:
                 print(f"Processing move for Player {player_id}: {direction}")
+                # Initialize the move
                 self.move_player(player_id, direction)
+            # Unauthorized move attempt
             else:
                 print(f"Player {player_id} tried to move Player {received_player_id} - unauthorized")
+        # Check if the message is to start the game
         elif msg_type == "start_game" and player_id == 1:
             print("Starting game by Player 1")
             self.start_game()
+        # Check if the message is to click the red star
         elif msg_type == "click_red_star":
             received_player_id = message.get("playerId")
             if received_player_id == player_id:
