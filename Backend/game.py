@@ -152,6 +152,7 @@ class GameClient:
                          (POWERUP_SIZE * 0.75, POWERUP_SIZE * 0.25), 2)
         return icon
 
+    # Connect to the game server
     def connect_to_server(self):
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -325,6 +326,7 @@ class GameClient:
             text = self.font_large.render("Connecting to server...", True, WHITE)
             self.screen.blit(text, (CANVAS_SIZE // 2 - text.get_width() // 2, CANVAS_SIZE // 2))
 
+    # Render the game lobby screen while waiting for players
     def render_lobby_screen(self):
         self.screen.fill(DARK_GRAY)
         text = self.font_large.render("Game Lobby", True, WHITE)
