@@ -52,7 +52,9 @@ This ensures accurate scoring and fair play across all clients.
 ### 1. Start the Server
 ```bash
 python server.py 
+```
 
 ### 2. Start the game
 ```bash
 python game.py 
+```
