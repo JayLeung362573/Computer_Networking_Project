@@ -166,16 +166,24 @@ class GameClient:
             self.connected = False
 
     def receive_messages(self):
+        # Continously recieve messages while client is connected
         try:
+        
             while self.running:
+                # First, recieve the 4-byte message header
                 header = self.recvall(4)
+                # If header is None, the connection is closed
                 if not header:
                     break
+                # Convert the header to integer to get the message length
                 message_length = int.from_bytes(header, byteorder='big')
+                # Recieve the message data
                 data = self.recvall(message_length)
                 if not data:
                     break
+                # Decode the data and parse the JSON message
                 message = json.loads(data.decode('utf-8'))
+                # Handle the server message
                 self.handle_server_message(message)
         except Exception as e:
             self.connected = False
@@ -194,26 +202,35 @@ class GameClient:
             data += packet
         return data
 
+    # Handle messages from the server
     def handle_server_message(self, message):
+        # Get the type of message
         msg_type = message.get("type")
         if msg_type == "connection_accepted":
+            # Connection accepted, get player ID and game state
             self.player_id = message.get("playerId")
             new_game_state = message.get("gameState")
+            # Update the game state if provided
             if new_game_state:
                 self.game_state.update(new_game_state)
             print(f"Connected as Player {self.player_id}")
+        # If connection is rejected, set the error message
         elif msg_type == "connection_rejected":
             self.connection_error = message.get("message")
             self.connected = False
+        # If the game state is updated, update the local game state
         elif msg_type == "game_state_update":
+            # Update the game state with the new data
             new_game_state = message.get("gameState")
             if new_game_state:
+                
                 self.game_state.update(new_game_state)
                 # Check if the game just ended
                 if not self.game_state.get("gameStarted", False) and self.game_state.get("winner") is not None:
                     self.game_ended = True
             print(
                 f"Received game state update for Player {self.player_id}: gameStarted={self.game_state.get('gameStarted', False)}")
+            # If the game is over, set the game_ended flag
             for player in self.game_state.get("players", []):
                 if player["id"] == self.player_id:
                     print(f"Player {self.player_id} position: ({player['x']}, {player['y']})")
