@@ -9,7 +9,7 @@ Created By: Puneet, Franoll, Gurshan and Jiawei
 - 🏆 **Objective**: Player with the most captured stars at the end of the game wins  
 - 🌟 **Red Star = Shared Object**: Rare, high-value, and synchronously accessed
 
-![Gameplay Footage](https://www.youtube.com/watch?v=mhVdACm6OCg)
+[Gameplay Footage](https://www.youtube.com/watch?v=mhVdACm6OCg)
 
 ---
 
