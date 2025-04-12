@@ -156,7 +156,7 @@ class GameServer:
             data += packet
         return data
 
-
+    
     def process_client_message(self, client_id, message):
         # Process the message from the client
         msg_type = message.get("type")
@@ -236,19 +236,21 @@ class GameServer:
 
         self.broadcast_game_state()
 
-
+    
     def move_player(self, player_id, direction):
         print(f"[Server] move_player() called for Player {player_id} direction: {direction}")
 
+        # check if game started - reject movement if not
         if not self.game_state["gameStarted"]:
             print("[Server] ❌ Move rejected: Game not started")
             return
 
+        # find the player in the game state by their id 
         player = next((p for p in self.game_state["players"] if p["id"] == player_id), None)
         if not player:
             print(f"[Server] ❌ Player {player_id} not found")
             return
-
+        #intialize movement delta
         dx, dy = 0, 0
         if direction == "up":
             dy = -1
@@ -276,7 +278,7 @@ class GameServer:
         new_x = max(0, min(CANVAS_SIZE - PLAYER_SIZE, new_x))
         new_y = max(0, min(CANVAS_SIZE - PLAYER_SIZE, new_y))
 
-        # Collision with obstacles
+        # Collision with the obstacles
         for obstacle in self.game_state["obstacles"]:
             if self.check_collision(new_x, new_y, PLAYER_SIZE, obstacle["x"], obstacle["y"], obstacle["size"]):
                 print(f"[Server] ⛔ Collision with obstacle — reverting position")
